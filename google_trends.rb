@@ -5,6 +5,7 @@ require 'rubygems'
 require 'uri'
 require 'httpclient'
 require 'optparse'
+require 'csv'
 
 
 module GoogleTrends
@@ -18,9 +19,9 @@ module GoogleTrends
 
 
   def self.console_application
-    options = {}
+    options,  results  = {} , ''
     username, password = nil, nil
-    output, results    = nil, ''
+    input,    output   = nil, nil
 
     # Setup console interface
     optparse = OptionParser.new do |opts|
@@ -58,35 +59,65 @@ module GoogleTrends
         password = pass
       end
 
+      opts.on( '-I', '--input FILE', 'Read all input queries from the specified file') do |file|
+        input = file
+      end
+
       output = DEFAULT_OUTPUT
       opts.on( '-O', '--output FILE', 'Save results from all queries in the specified file') do |file|
         output = file
       end
 
       opts.on( '-H', '--help', 'Display this screen' ) do
-       puts opts
-       exit
+        puts opts
+        exit
       end
     end
 
     # Parse command-line arguments
     optparse.parse!
 
-    # Process all search terms
-    unless ARGV.empty?
+    # Gather all queries
+    queries = []
+    ARGV.each do |term|  # queries from command-line
+      queries << options.clone
+      queries.last[:q] = term
+    end
+    if input  # queries from input file
+      csv_queries = CSV.read input
+      csv_queries.shift
+      csv_queries.each do |query|
+        if query.size > 3
+          queries << options.clone
+          query[1] = nil if query[1] == 'worldwide'
+          query[2] = query[2].downcase.delete(' ').sub('search','')
+          query[3] = nil if query[3] == 'all categories'
+          queries.last[:q]     = query[0]
+          queries.last[:geo]   = query[1]
+          queries.last[:gprop] = query[2]
+          queries.last[:cat]   = query[3]
+        else
+          puts 'Invalid input CSV file'
+          exit
+        end
+      end
+    end
+
+    # Process all queries
+    unless queries.empty?
       client = Client.new username, password
-      ARGV.each do |query|
-        options[:q] = query
-        report = client.download_csv_report options
+      queries.each do |query|
+        report = client.download_csv_report query
         if output
           results += report.to_s
         else
-          report.save "#{query}.csv"
+          report.save "#{query['q']}.csv"
         end
       end
       Report.new(results).save output if output
     else
-      puts 'Provide at least one search term'
+      puts 'Provide at least one search query'
+      exit
     end
 
   end
@@ -136,7 +167,7 @@ module GoogleTrends
     end
     
     def download_csv_report params = {}
-      params = {
+      default_params = {
         'hl'      => 'en',
         'content' => '1',
         'export'  => '1',
@@ -144,17 +175,18 @@ module GoogleTrends
         'geo'     => nil,  # Location
         'cat'     => nil,  # Category
         'gprop'   => nil,  # Search type
-      }.merge params
+      }
 
       params.keys.each do |key|
         params[key.to_s] = params.delete key unless key.is_a? String
       end
+      params = default_params.merge params
       params.each do |key, value|
         params.delete key if value.nil?
       end
       params.delete 'gprop' if params['gprop'] == 'web'
       no_format = params.delete 'no_format'
-      
+
       puts "\nDownload CSV report for #{params['q']} ..."
       data = @client.get_content @url_Export, params
       unless no_format  # crop irrelevant parts of the report
