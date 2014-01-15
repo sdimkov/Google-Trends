@@ -105,16 +105,21 @@ module GoogleTrends
 
     # Process all queries
     unless queries.empty?
-      client = Client.new username, password
-      queries.each do |query|
-        report = client.download_csv_report query
-        if output
-          results += report.to_s
-        else
-          report.save "#{query['q']}.csv"
+      begin
+        client = Client.new username, password
+        queries.each do |query|
+          report = client.download_csv_report query
+          if report
+            if output
+              results += report.to_s
+            else
+              report.save "#{query['q']}.csv"
+            end
+          end
         end
+      ensure
+        Report.new(results).save output if output
       end
-      Report.new(results).save output if output
     else
       puts 'Provide at least one search query'
       exit
@@ -129,7 +134,6 @@ module GoogleTrends
              username.size > 1     and password.size > 1
         raise 'Provide valid username and password for Google authentication'
       end
-      puts "\nLogin in Google Trends as #{username} ..."
       
       @login_params = {
         'continue'         => 'http://www.google.com/trends',
@@ -148,10 +152,10 @@ module GoogleTrends
       @url_CookieCheck         = 'https://www.google.com/accounts/CheckCookie?chtml=LoginDoneHtml'
       @url_PerfCookie          = 'http://www.google.com'
       
+      puts "\nLogin in Google Trends as #{username} ..."
       @client = HTTPClient.new()
       uri = URI.parse @url_ServiceLoginBoxAuth
-      res = @client.get uri,@headers
-
+      res = @client.get uri, @headers
 
       galx = res.body.match /<input name="GALX" type="hidden"\n\s+value="([a-zA-Z0-9_-]+)">/i
       unless galx
@@ -193,8 +197,16 @@ module GoogleTrends
         data = data.to_s.split("Interest over time\n").last.split("\n\n").first
       end
 
-      puts 'Report download success.'
-      return Report.new data
+      if data.include? '<div '
+        puts 'Report download failed:'
+        errors = data.scan />([^<>\n]+)</
+        errors.each { |err| puts "  #{err.first}" }
+        return nil
+      else
+        puts 'Report download success.'
+        return Report.new data 
+      end
+     
     end
     
   end  # class GoogleTrends::Client
@@ -207,7 +219,7 @@ module GoogleTrends
     end
 
     def to_s
-      @data
+      @data.to_s
     end
 
     def to_csv
