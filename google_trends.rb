@@ -71,8 +71,8 @@ module GoogleTrends
       end
       
       pause = DEFAULT_BREAK
-      opts.on( '-B', '--break N', 'Pause execution of input queries after every N queries processed' do |n|
-        pause = n
+      opts.on( '-B', '--break N', 'Pause execution of input queries after every N queries processed') do |n|
+        pause = n.to_i
       end
 
       opts.on( '-H', '--help', 'Display this screen' ) do
@@ -118,7 +118,7 @@ module GoogleTrends
         count += 1
         if pause > 0 and count >= pause
           puts "\n#{count} queries processed.\nPress [ENTER] to continue..."
-          gets
+          $stdin.gets
           count = 0
         end
         if report
