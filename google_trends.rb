@@ -16,12 +16,14 @@ module GoogleTrends
   DEFAULT_CATEGORY = nil
   DEFAULT_SEARCH   = 'web'
   DEFAULT_OUTPUT   = nil
+  DEFAULT_BREAK    = 0
 
 
   def self.console_application
-    options,  results  = {} , ''
+    options            = {}
     username, password = nil, nil
     input,    output   = nil, nil
+    pause,    count    = 0  , 0
 
     # Setup console interface
     optparse = OptionParser.new do |opts|
@@ -67,6 +69,11 @@ module GoogleTrends
       opts.on( '-O', '--output FILE', 'Save results from all queries in the specified file') do |file|
         output = file
       end
+      
+      pause = DEFAULT_BREAK
+      opts.on( '-B', '--break N', 'Pause execution of input queries after every N queries processed' do |n|
+        pause = n
+      end
 
       opts.on( '-H', '--help', 'Display this screen' ) do
         puts opts
@@ -105,20 +112,22 @@ module GoogleTrends
 
     # Process all queries
     unless queries.empty?
-      begin
-        client = Client.new username, password
-        queries.each do |query|
-          report = client.download_csv_report query
-          if report
-            if output
-              results += report.to_s
-            else
-              report.save "#{query['q']}.csv"
-            end
+      client = Client.new username, password
+      queries.each do |query|
+        report = client.download_csv_report query
+        count += 1
+        if pause > 0 and count >= pause
+          puts "\n#{count} queries processed.\nPress [ENTER] to continue..."
+          gets
+          count = 0
+        end
+        if report
+          if output
+            report.append output
+          else
+            report.save "#{query['q']}.csv"
           end
         end
-      ensure
-        Report.new(results).save output if output
       end
     else
       puts 'Provide at least one search query'
@@ -227,6 +236,12 @@ module GoogleTrends
 
     def save filename
       file = File.new filename, 'w'
+      file.write @data.to_s
+      file.close
+    end
+    
+    def append filename
+      file = File.new filename, 'a'
       file.write @data.to_s
       file.close
     end
